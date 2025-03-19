@@ -2,11 +2,9 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
-	"time"
 )
-
-// сюда писать код
 
 type Pair struct {
 	index int
@@ -15,11 +13,15 @@ type Pair struct {
 
 func SingleHash(in, out chan interface{}) {
 	var m sync.Mutex
+	var wg sync.WaitGroup
 	index := 0
 
-	for i := range in {
-		go func(inCh interface{}, outCh chan interface{}, idx int) {
-			data, _ := inCh.(string)
+	for val := range in {
+		wg.Add(1)
+		go func(value interface{}, outCh chan interface{}, idx int) {
+			defer wg.Done()
+			data_int, _ := value.(int)
+			data := strconv.Itoa(data_int)
 			data_crc32 := DataSignerCrc32(data)
 
 			m.Lock()
@@ -30,15 +32,18 @@ func SingleHash(in, out chan interface{}) {
 			result := data_crc32 + "~" + data_md5_crc32
 			p := Pair{val: result, index: idx}
 
-			fmt.Printf("%v  SingleHash data %v\n", inCh, inCh)
-			fmt.Printf("%v  SingleHash md5(data) %v\n", inCh, data_md5)
-			fmt.Printf("%v  crc32(md5(data)) %v\n", inCh, data_md5_crc32)
-			fmt.Printf("%v  crc32(data) %v\n", inCh, data_crc32)
-			fmt.Printf("%v  SingleHash result %v\n", inCh, result)
+			fmt.Printf("%v  SingleHash data %v\n", data, data)
+			fmt.Printf("%v  SingleHash md5(data) %v\n", data, data_md5)
+			fmt.Printf("%v  SingleHash crc32(md5(data)) %v\n", data, data_md5_crc32)
+			fmt.Printf("%v  SingleHash crc32(data) %v\n", data, data_crc32)
+			fmt.Printf("%v  SingleHash result %v\n", data, result)
 			outCh <- p
-		}(i, out, index)
+		}(val, out, index)
 		index++
 	}
+
+	wg.Wait()
+	fmt.Println("Single Hash finished")
 }
 
 func MultiHash(in, out chan interface{}) {
@@ -53,6 +58,7 @@ func ExecutePipeline(jobs ...job) {
 	var wg sync.WaitGroup
 
 	in := make(chan interface{})
+	close(in)
 
 	for i, work := range jobs {
 
@@ -63,7 +69,6 @@ func ExecutePipeline(jobs ...job) {
 			defer wg.Done()
 			defer close(outCh)
 			fn(inCh, outCh)
-			time.Sleep(5 * time.Second)
 			fmt.Printf("Job %d worked\n", num)
 		}(work, in, out, i)
 
@@ -72,6 +77,7 @@ func ExecutePipeline(jobs ...job) {
 	}
 
 	wg.Wait()
+	fmt.Println("Waiting is finished")
 }
 
 func main() {
