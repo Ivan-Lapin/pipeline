@@ -2,14 +2,11 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 )
-
-type Pair struct {
-	index int
-	val   string
-}
 
 func SingleHash(in, out chan interface{}) {
 	var m sync.Mutex
@@ -30,28 +27,62 @@ func SingleHash(in, out chan interface{}) {
 
 			data_md5_crc32 := DataSignerCrc32(data_md5)
 			result := data_crc32 + "~" + data_md5_crc32
-			p := Pair{val: result, index: idx}
 
 			fmt.Printf("%v  SingleHash data %v\n", data, data)
 			fmt.Printf("%v  SingleHash md5(data) %v\n", data, data_md5)
 			fmt.Printf("%v  SingleHash crc32(md5(data)) %v\n", data, data_md5_crc32)
 			fmt.Printf("%v  SingleHash crc32(data) %v\n", data, data_crc32)
 			fmt.Printf("%v  SingleHash result %v\n", data, result)
-			outCh <- p
+			outCh <- result
 		}(val, out, index)
 		index++
 	}
 
 	wg.Wait()
-	fmt.Println("Single Hash finished")
 }
 
 func MultiHash(in, out chan interface{}) {
+	var wg sync.WaitGroup
 
+	for val := range in {
+		wg.Add(1)
+		go func(inVal interface{}, out chan interface{}) {
+			defer wg.Done()
+			result := ""
+			for i := 0; i < 6; i++ {
+				num := strconv.Itoa(i)
+				value, _ := inVal.(string)
+				data := num + value
+				data_crc32 := DataSignerCrc32(data)
+				result += data_crc32
+				fmt.Printf("%v MultiHash: crc32(th+step1) %d %s\n", inVal, i, data_crc32)
+			}
+			fmt.Printf("%v MultiHash result %s\n", inVal, result)
+		}(val, out)
+	}
+
+	wg.Wait()
 }
 
 func CombineResults(in, out chan interface{}) {
+	var wg sync.WaitGroup
+	slice := []string{}
 
+	for val := range in {
+		wg.Add(1)
+		go func(inVal interface{}, out chan interface{}) {
+			defer wg.Done()
+			value_str, _ := inVal.(string)
+			slice = append(slice, value_str)
+
+		}(val, out)
+	}
+	wg.Wait()
+
+	sort.Strings(slice)
+	result := strings.Join(slice, "_")
+	out <- result
+	fmt.Printf("CombineResults\n%s", result)
 }
 
 func ExecutePipeline(jobs ...job) {
@@ -69,7 +100,6 @@ func ExecutePipeline(jobs ...job) {
 			defer wg.Done()
 			defer close(outCh)
 			fn(inCh, outCh)
-			fmt.Printf("Job %d worked\n", num)
 		}(work, in, out, i)
 
 		in = out
@@ -77,7 +107,6 @@ func ExecutePipeline(jobs ...job) {
 	}
 
 	wg.Wait()
-	fmt.Println("Waiting is finished")
 }
 
 func main() {
